@@ -1,0 +1,15 @@
+<svg width="1000" height="220" viewBox="0 0 1000 220" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>Insurance platform banner</title>
+<defs>
+<linearGradient id="hg" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0%" stop-color="#0f6e5e"/>
+<stop offset="100%" stop-color="#1a4fb4"/>
+</linearGradient>
+</defs>
+<rect x="0" y="0" width="1000" height="220" fill="url(#hg)"/>
+<circle cx="80" cy="50" r="65" fill="#ffffff" opacity="0.04"/>
+<circle cx="930" cy="175" r="110" fill="#ffffff" opacity="0.04"/>
+<text x="500.0" y="100" text-anchor="middle" font-family="Verdana,Arial,sans-serif" font-size="46" font-weight="bold" fill="#ffffff">&#127973; CareLink Insurance Platform</text>
+<text x="500.0" y="140" text-anchor="middle" font-family="Verdana,Arial,sans-serif" font-size="19" fill="#e6edf3">Patient &#183; Hospital &#183; Admin &amp; Insurer &#8212; One Connected System</text>
+<text x="500.0" y="172" text-anchor="middle" font-family="Verdana,Arial,sans-serif" font-size="13" fill="#cfe9e2">OTP-verified care &#183; Secret-code authorized uploads &#183; Family access &#183; Real-time claims</text>
+</svg>
