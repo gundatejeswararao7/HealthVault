@@ -21,7 +21,7 @@
 
 ## 📌 Overview
 
-**CareLink** is a three-application insurance and hospital-care platform connecting
+**HealthVault** is a three-application insurance and hospital-care platform connecting
 **patients**, **hospital branches**, and **admin/insurer staff** through one shared backend
 data layer. A hospital can only act on a patient's behalf after the patient has personally
 verified it — twice, through two separate mechanisms — and every approval-driven process
