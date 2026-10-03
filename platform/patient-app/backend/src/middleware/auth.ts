@@ -80,5 +80,9 @@ export async function authenticate(
       phone: supabaseUser.phone,
     },
     profile: profile as Profile,
+    token: jwt,
   };
 }
+
+export const requireAuth = authenticate;
+export default authenticate;

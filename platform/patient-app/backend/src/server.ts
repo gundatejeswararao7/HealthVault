@@ -1,15 +1,13 @@
+import 'dotenv/config';
 import fastify from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
-import dotenv from 'dotenv';
 import { appointmentRoutes } from './routes/appointments';
 import { documentRoutes } from './routes/documents';
 import { claimRoutes } from './routes/claims';
 import { notificationRoutes } from './routes/notifications';
 import { profileRoutes } from './routes/profile';
-
-dotenv.config();
 
 const server = fastify({
   logger: {

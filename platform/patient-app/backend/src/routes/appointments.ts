@@ -398,20 +398,32 @@ async function updateAppointmentStatus(
 // Plugin registration
 // ---------------------------------------------------------------------------
 
-export default async function appointmentsPlugin(
+export async function appointmentsPlugin(
   fastify: FastifyInstance,
   _options: FastifyPluginOptions,
 ): Promise<void> {
   // All appointment routes require authentication.
   fastify.addHook('preHandler', authenticate);
 
+  fastify.post('/', { handler: createAppointment });
   fastify.post('/appointments', { handler: createAppointment });
+  fastify.get('/', { handler: listAppointments });
   fastify.get('/appointments', { handler: listAppointments });
+  fastify.get<{ Params: { id: string } }>('/:id', {
+    handler: getAppointment,
+  });
   fastify.get<{ Params: { id: string } }>('/appointments/:id', {
     handler: getAppointment,
+  });
+  fastify.patch<{ Params: { id: string } }>('/:id/status', {
+    preHandler: [requireRole('provider', 'admin')],
+    handler: updateAppointmentStatus,
   });
   fastify.patch<{ Params: { id: string } }>('/appointments/:id/status', {
     preHandler: [requireRole('provider', 'admin')],
     handler: updateAppointmentStatus,
   });
 }
+
+export const appointmentRoutes = appointmentsPlugin;
+export default appointmentsPlugin;
