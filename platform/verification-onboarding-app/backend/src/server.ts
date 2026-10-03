@@ -1,15 +1,13 @@
+import 'dotenv/config';
 import fastify from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
-import dotenv from 'dotenv';
-import { branchApplicationRoutes } from './routes/branch-applications';
-import { claimRoutes } from './routes/claims';
-import { familyRequestRoutes } from './routes/family-requests';
-import { hospitalRoutes } from './routes/hospitals';
+import branchApplicationRoutes from './routes/branch-applications';
+import claimRoutes from './routes/claims';
+import familyRequestRoutes from './routes/family-requests';
+import hospitalRoutes from './routes/hospitals';
 import { dashboardRoutes } from './routes/dashboard';
-
-dotenv.config();
 
 const server = fastify({
   logger: {
@@ -38,10 +36,10 @@ async function main() {
   server.get('/health', async () => ({ status: 'ok', service: 'verification-onboarding-backend' }));
 
   // Register routes
-  await server.register(branchApplicationRoutes, { prefix: '/api/v1/branch-applications' });
-  await server.register(claimRoutes, { prefix: '/api/v1/claims' });
-  await server.register(familyRequestRoutes, { prefix: '/api/v1/family-requests' });
-  await server.register(hospitalRoutes, { prefix: '/api/v1/hospitals' });
+  await server.register(branchApplicationRoutes, { prefix: '/api/v1' });
+  await server.register(claimRoutes, { prefix: '/api/v1' });
+  await server.register(familyRequestRoutes, { prefix: '/api/v1' });
+  await server.register(hospitalRoutes, { prefix: '/api/v1' });
   await server.register(dashboardRoutes, { prefix: '/api/v1/dashboard' });
 
   const port = parseInt(process.env.PORT || '4003', 10);
