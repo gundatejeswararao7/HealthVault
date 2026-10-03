@@ -1,0 +1,119 @@
+version: "3.9"
+
+services:
+  # ─── Patient App ───────────────────────────────────────────────
+  patient-backend:
+    build:
+      context: ./patient-app/backend
+      dockerfile: Dockerfile
+    ports:
+      - "4001:4001"
+    environment:
+      PORT: 4001
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      FRONTEND_URL: http://patient-frontend:3001
+    env_file:
+      - ./patient-app/backend/.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  patient-frontend:
+    build:
+      context: ./patient-app/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      NEXT_PUBLIC_API_URL: http://patient-backend:4001
+    env_file:
+      - ./patient-app/frontend/.env.local
+    depends_on:
+      - patient-backend
+    restart: unless-stopped
+
+  # ─── Provider / Admin App ──────────────────────────────────────
+  provider-backend:
+    build:
+      context: ./provider-admin-app/backend
+      dockerfile: Dockerfile
+    ports:
+      - "4002:4002"
+    environment:
+      PORT: 4002
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      FRONTEND_URL: http://provider-frontend:3002
+    env_file:
+      - ./provider-admin-app/backend/.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  provider-frontend:
+    build:
+      context: ./provider-admin-app/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      NEXT_PUBLIC_API_URL: http://provider-backend:4002
+    env_file:
+      - ./provider-admin-app/frontend/.env.local
+    depends_on:
+      - provider-backend
+    restart: unless-stopped
+
+  # ─── Verification / Onboarding App ────────────────────────────
+  verification-backend:
+    build:
+      context: ./verification-onboarding-app/backend
+      dockerfile: Dockerfile
+    ports:
+      - "4003:4003"
+    environment:
+      PORT: 4003
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      FRONTEND_URL: http://verification-frontend:3003
+    env_file:
+      - ./verification-onboarding-app/backend/.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  verification-frontend:
+    build:
+      context: ./verification-onboarding-app/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      NEXT_PUBLIC_API_URL: http://verification-backend:4003
+    env_file:
+      - ./verification-onboarding-app/frontend/.env.local
+    depends_on:
+      - verification-backend
+    restart: unless-stopped
