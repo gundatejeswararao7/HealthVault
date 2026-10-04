@@ -231,8 +231,10 @@ async function listAppointments(
   }
 
   const total = count ?? 0;
+  const items = (data ?? []) as AppointmentResponse[];
   const response: PaginatedResponse<AppointmentResponse> = {
-    items: (data ?? []) as AppointmentResponse[],
+    data: items,
+    items,
     total,
     page,
     per_page,

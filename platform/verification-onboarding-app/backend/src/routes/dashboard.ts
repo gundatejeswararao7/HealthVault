@@ -5,10 +5,10 @@ import { requireRole } from '../middleware/requireRole';
 
 export const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', authenticate);
-  fastify.addHook('preHandler', requireRole('admin', 'insurer'));
+  fastify.addHook('preHandler', requireRole(['admin', 'insurer']));
 
   // GET /dashboard/stats - aggregate platform stats
-  fastify.get('/stats', async (request, reply) => {
+  fastify.get('/stats', async (_request, reply) => {
     try {
       // 1. Pending branch applications
       const { count: pendingBranchApps } = await supabaseAdmin

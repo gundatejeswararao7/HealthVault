@@ -52,12 +52,14 @@ export const supabaseAdmin: SupabaseClient = createClient(
  *
  * @param jwt - The raw JWT string from the Authorization Bearer header.
  */
-export function createUserClient(jwt: string): SupabaseClient {
+export function createUserClient(jwt?: string): SupabaseClient {
   return createClient(supabaseUrl as string, anonKey as string, {
     global: {
-      headers: {
-        Authorization: `Bearer ${jwt}`,
-      },
+      headers: jwt
+        ? {
+            Authorization: `Bearer ${jwt}`,
+          }
+        : {},
     },
     auth: {
       autoRefreshToken: false,

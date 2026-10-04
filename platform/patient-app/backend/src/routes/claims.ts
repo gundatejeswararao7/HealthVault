@@ -186,7 +186,7 @@ export const claimRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /claims/:id/treatment-items
   fastify.get('/:id/treatment-items', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { profile, token } = request.user!;
+    const { token } = request.user!;
 
     const supabase = createUserClient(token);
     const { data: claim } = await supabase

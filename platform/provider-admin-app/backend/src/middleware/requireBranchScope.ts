@@ -90,7 +90,7 @@ export function requireBranchScope(options: BranchScopeOptions) {
         return reply.status(404).send({ success: false, error: `${table} not found` });
       }
 
-      const parentId = (child as Record<string, string>)[fk];
+      const parentId = (child as unknown as Record<string, string>)[fk];
 
       const { data: parent, error: parentError } = await supabaseAdmin
         .from(parentTable)

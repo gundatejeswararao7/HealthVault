@@ -144,7 +144,7 @@ export default async function branchApplicationRoutes(fastify: FastifyInstance):
 
       // Generate signed URL for license document if available
       let documentSignedUrl: string | null = null;
-      const hospital = application.hospitals as Record<string, unknown> | null;
+      const hospital = application.hospitals as unknown as Record<string, unknown> | null;
       const docPath = hospital ? (hospital['license_document_path'] as string | undefined) : undefined;
 
       if (docPath) {

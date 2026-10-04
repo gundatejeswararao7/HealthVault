@@ -33,7 +33,7 @@ export const profileRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', requireAuth);
 
   // GET /profile - get profile & patient data
-  fastify.get('/', async (request, reply) => {
+  fastify.get('/', async (request) => {
     const { profile, user } = request.user!;
 
     const { data: patient } = await supabaseAdmin

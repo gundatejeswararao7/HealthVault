@@ -289,9 +289,11 @@ export interface ApiResponse<T> {
  */
 export interface PaginatedResponse<T> {
   data: T[];
+  items?: T[];
   total: number;
   page: number;
   per_page: number;
+  total_pages?: number;
 }
 
 /**
@@ -336,3 +338,18 @@ export interface CreateFamilyMemberRequest {
   date_of_birth: string;
   email: string;
 }
+
+/** Authenticated request context attached by auth middleware */
+export interface AuthenticatedUser {
+  user: {
+    id: string;
+    email?: string;
+    phone?: string;
+  };
+  profile: Profile;
+  token?: string;
+}
+
+/** Typed appointment API response */
+export type AppointmentResponse = Appointment;
+
