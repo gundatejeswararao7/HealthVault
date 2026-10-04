@@ -1,354 +1,150 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { supabaseAdmin } from '../lib/supabase';
-import { authenticate } from '../middleware/auth';
 import { requireRole } from '../middleware/requireRole';
 
-// ---------------------------------------------------------------------------
-// Zod schemas
-// ---------------------------------------------------------------------------
-
-const claimDecisionSchema = z.object({
+const decisionSchema = z.object({
   status: z.enum(['approved', 'rejected']),
-  amount_approved: z.number().positive().optional(),
-  decision_reason: z.string().min(1).max(2000).optional(),
-}).refine(
-  (d) => d.status !== 'approved' || (d.amount_approved !== undefined && d.amount_approved > 0),
-  { message: 'amount_approved is required and must be positive when approving', path: ['amount_approved'] },
-).refine(
-  (d) => d.status !== 'rejected' || (d.decision_reason && d.decision_reason.length > 0),
-  { message: 'decision_reason is required when rejecting', path: ['decision_reason'] },
-);
-
-// ---------------------------------------------------------------------------
-// Route plugin
-// ---------------------------------------------------------------------------
+  amount_approved: z.number().optional(),
+  decision_reason: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (data.status === 'approved') {
+    if (data.amount_approved === undefined || data.amount_approved <= 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "amount_approved is required and must be > 0 when approved" });
+    }
+  } else if (data.status === 'rejected') {
+    if (!data.decision_reason) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "decision_reason is required when rejected" });
+    }
+  }
+});
 
 export default async function claimsRoutes(fastify: FastifyInstance): Promise<void> {
+  fastify.addHook('preHandler', async (req, reply) => {
+    return requireRole(['admin', 'insurer'])(req, reply);
+  });
 
-  /**
-   * GET /claims
-   * List submitted/under_review claims (insurer/admin).
-   * Filter by status, patient_id, policy_id, date range.
-   */
-  fastify.get(
-    '/claims',
-    { preHandler: [authenticate, requireRole(['admin', 'insurer'])] },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const query = request.query as Record<string, string | undefined>;
-      const status = query['status'];
-      const patientId = query['patient_id'];
-      const policyId = query['policy_id'];
-      const dateFrom = query['date_from'];
-      const dateTo = query['date_to'];
-      const page = Math.max(1, parseInt(query['page'] ?? '1', 10));
-      const limit = Math.min(100, Math.max(1, parseInt(query['limit'] ?? '20', 10)));
-      const offset = (page - 1) * limit;
+  fastify.get('/claims', async (request: FastifyRequest<{ Querystring: { status?: string, patient_id?: string, hospital_id?: string, page?: string, limit?: string } }>, reply) => {
+    const page = parseInt(request.query.page || '1');
+    const limit = parseInt(request.query.limit || '20');
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
 
-      let q = supabaseAdmin
+    let query = supabaseAdmin
+      .from('claims')
+      .select(`
+        *,
+        patients ( id, full_name ),
+        billing_cases!inner ( id, title, hospital_id ),
+        insurance_policies ( id, policy_number, plan_id, insurance_plans(name) )
+      `, { count: 'exact' });
+
+    if (request.query.status) query = query.eq('status', request.query.status);
+    if (request.query.patient_id) query = query.eq('patient_id', request.query.patient_id);
+    if (request.query.hospital_id) query = query.eq('billing_cases.hospital_id', request.query.hospital_id);
+
+    const { data, count, error } = await query.order('submitted_at', { ascending: false }).range(from, to);
+    if (error) {
+      return reply.status(500).send({ success: false, error: error.message });
+    }
+
+    return { success: true, data, count, page, limit };
+  });
+
+  fastify.get('/claims/:id', async (request: FastifyRequest<{ Params: { id: string } }>, reply) => {
+    const { data, error } = await supabaseAdmin
+      .from('claims')
+      .select(`
+        *,
+        billing_cases ( *, billing_items (*), hospitals (*) ),
+        patients (*),
+        insurance_policies ( *, insurance_plans (*) )
+      `)
+      .eq('id', request.params.id)
+      .single();
+
+    if (error) {
+      return reply.status(500).send({ success: false, error: error.message });
+    }
+    return { success: true, data };
+  });
+
+  fastify.patch('/claims/:id/decision', async (request: FastifyRequest<{ Params: { id: string }, Body: any }>, reply) => {
+    const profileId = (request as any).user?.id;
+    try {
+      const parsed = decisionSchema.parse(request.body);
+      
+      const { data: claim, error: fetchError } = await supabaseAdmin.from('claims').select('*').eq('id', request.params.id).single();
+      if (fetchError) throw fetchError;
+
+      if (parsed.status === 'approved' && parsed.amount_approved! > claim.amount_claimed) {
+        return reply.status(400).send({ success: false, error: 'Approved amount cannot exceed claimed amount' });
+      }
+
+      const { data: updatedClaim, error: updateError } = await supabaseAdmin
         .from('claims')
-        .select(
-          `
-          id,
-          status,
-          amount_claimed,
-          amount_approved,
-          decision_reason,
-          created_at,
-          updated_at,
-          reviewed_at,
-          reviewer_id,
-          patient:profiles!claims_patient_id_fkey (
-            id,
-            full_name,
-            email
-          ),
-          policy:insurance_policies!claims_policy_id_fkey (
-            id,
-            policy_number,
-            plan_name
-          ),
-          medical_case:medical_cases!claims_case_id_fkey (
-            id,
-            summary,
-            diagnosis
-          )
-          `,
-          { count: 'exact' },
-        )
-        .order('created_at', { ascending: false })
-        .range(offset, offset + limit - 1);
+        .update({
+          status: parsed.status,
+          amount_approved: parsed.amount_approved,
+          decision_reason: parsed.decision_reason,
+          reviewer_id: profileId,
+          reviewed_at: new Date().toISOString()
+        })
+        .eq('id', request.params.id)
+        .select()
+        .single();
+      if (updateError) throw updateError;
 
-      if (status) {
-        q = q.eq('status', status);
+      if (parsed.status === 'approved') {
+        const { data: billingCase } = await supabaseAdmin.from('billing_cases').select('insurer_paid').eq('id', claim.billing_case_id).single();
+        const currentPaid = billingCase?.insurer_paid || 0;
+        await supabaseAdmin.from('billing_cases').update({
+          insurer_paid: currentPaid + parsed.amount_approved!,
+          status: 'settled'
+        }).eq('id', claim.billing_case_id);
       } else {
-        // By default, show only actionable claims
-        q = q.in('status', ['submitted', 'under_review']);
-      }
-      if (patientId) q = q.eq('patient_id', patientId);
-      if (policyId) q = q.eq('policy_id', policyId);
-      if (dateFrom) q = q.gte('created_at', dateFrom);
-      if (dateTo) q = q.lte('created_at', dateTo);
-
-      const { data, error, count } = await q;
-      if (error) {
-        request.log.error(error, 'claims list error');
-        return reply.status(500).send({ error: 'Failed to fetch claims' });
+        await supabaseAdmin.from('billing_cases').update({ status: 'rejected' }).eq('id', claim.billing_case_id);
       }
 
-      return reply.send({
-        data,
-        pagination: { page, limit, total: count ?? 0, totalPages: Math.ceil((count ?? 0) / limit) },
-      });
-    },
-  );
-
-  /**
-   * GET /claims/:id
-   * Full claim details: claim + patient + policy + case + treatment_items.
-   */
-  fastify.get(
-    '/claims/:id',
-    { preHandler: [authenticate, requireRole(['admin', 'insurer'])] },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const { id } = request.params as { id: string };
-
-      const { data, error } = await supabaseAdmin
-        .from('claims')
-        .select(
-          `
-          id,
-          status,
-          amount_claimed,
-          amount_approved,
-          decision_reason,
-          created_at,
-          updated_at,
-          reviewed_at,
-          reviewer_id,
-          patient:profiles!claims_patient_id_fkey (
-            id,
-            full_name,
-            email,
-            phone,
-            date_of_birth
-          ),
-          policy:insurance_policies!claims_policy_id_fkey (
-            id,
-            policy_number,
-            plan_name,
-            coverage_amount,
-            deductible,
-            start_date,
-            end_date
-          ),
-          medical_case:medical_cases!claims_case_id_fkey (
-            id,
-            summary,
-            diagnosis,
-            admission_date,
-            discharge_date,
-            hospital:hospitals!medical_cases_hospital_id_fkey (
-              id,
-              name,
-              address
-            )
-          ),
-          treatment_items (
-            id,
-            description,
-            category,
-            quantity,
-            unit_cost,
-            total_cost
-          )
-          `,
-        )
-        .eq('id', id)
-        .single();
-
-      if (error || !data) {
-        return reply.status(404).send({ error: 'Claim not found' });
-      }
-
-      return reply.send({ data });
-    },
-  );
-
-  /**
-   * PATCH /claims/:id/decision
-   * Approve or reject a claim (insurer/admin).
-   * amount_approved must be ≤ amount_claimed when approving.
-   */
-  fastify.patch(
-    '/claims/:id/decision',
-    { preHandler: [authenticate, requireRole(['admin', 'insurer'])] },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const { id } = request.params as { id: string };
-
-      const parsed = claimDecisionSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.status(400).send({ error: 'Validation failed', details: parsed.error.flatten() });
-      }
-
-      const { status: newStatus, amount_approved, decision_reason } = parsed.data;
-
-      // Fetch current claim
-      const { data: existing, error: fetchError } = await supabaseAdmin
-        .from('claims')
-        .select('id, status, amount_claimed, patient_id')
-        .eq('id', id)
-        .single();
-
-      if (fetchError || !existing) {
-        return reply.status(404).send({ error: 'Claim not found' });
-      }
-
-      // Guard: only submitted/under_review claims can be decided
-      if (!['submitted', 'under_review'].includes(existing.status as string)) {
-        return reply.status(409).send({ error: `Claim is already ${existing.status} — cannot re-decide` });
-      }
-
-      // Enforce amount_approved ≤ amount_claimed
-      const amountClaimed = existing.amount_claimed as number;
-      if (newStatus === 'approved' && amount_approved !== undefined && amount_approved > amountClaimed) {
-        return reply.status(400).send({
-          error: `amount_approved (${amount_approved}) cannot exceed amount_claimed (${amountClaimed})`,
-        });
-      }
-
-      const oldStatus = existing.status as string;
-
-      // Update claim
-      const { data: updated, error: updateError } = await supabaseAdmin
-        .from('claims')
-        .update({
-          status: newStatus,
-          amount_approved: newStatus === 'approved' ? (amount_approved ?? null) : null,
-          decision_reason: decision_reason ?? null,
-          reviewer_id: request.user.profileId,
-          reviewed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', id)
-        .select('id, status, amount_approved, decision_reason, reviewed_at')
-        .single();
-
-      if (updateError || !updated) {
-        request.log.error(updateError, 'claims update error');
-        return reply.status(500).send({ error: 'Failed to update claim' });
-      }
-
-      // Audit log
       await supabaseAdmin.from('audit_logs').insert({
-        actor_id: request.user.profileId,
-        action: 'claim_decision',
-        resource_type: 'claims',
-        resource_id: id,
-        old_values: { status: oldStatus },
-        new_values: {
-          status: newStatus,
-          amount_approved: amount_approved ?? null,
-          decision_reason: decision_reason ?? null,
-        },
-        created_at: new Date().toISOString(),
+        actor_id: profileId,
+        action: `claim_${parsed.status}`,
+        entity_type: 'claims',
+        entity_id: claim.id,
+        details: parsed
       });
-
-      // Notify patient
-      const notificationMessage =
-        newStatus === 'approved'
-          ? `Your claim (ID: ${id}) has been approved for amount ₹${amount_approved?.toLocaleString()}.`
-          : `Your claim (ID: ${id}) has been rejected. Reason: ${decision_reason}`;
 
       await supabaseAdmin.from('notifications').insert({
-        profile_id: existing.patient_id,
-        type: 'claim_decision',
-        title: `Claim ${newStatus.charAt(0).toUpperCase() + newStatus.slice(1)}`,
-        message: notificationMessage,
-        reference_type: 'claims',
-        reference_id: id,
-        is_read: false,
-        created_at: new Date().toISOString(),
+        profile_id: claim.patient_id,
+        title: `Claim ${parsed.status === 'approved' ? 'Approved' : 'Rejected'}`,
+        body: parsed.status === 'approved' ? `Your claim has been approved for ${parsed.amount_approved}.` : `Your claim was rejected. Reason: ${parsed.decision_reason}`
       });
 
-      return reply.send({
-        data: updated,
-        message: `Claim ${newStatus} successfully`,
-      });
-    },
-  );
+      return { success: true, data: updatedClaim };
+    } catch (error: any) {
+      return reply.status(400).send({ success: false, error: error.message });
+    }
+  });
 
-  /**
-   * PATCH /claims/:id/mark-paid
-   * Mark an approved claim as paid (admin/insurer only).
-   */
-  fastify.patch(
-    '/claims/:id/mark-paid',
-    { preHandler: [authenticate, requireRole(['admin', 'insurer'])] },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const { id } = request.params as { id: string };
+  fastify.patch('/claims/:id/mark-paid', async (request: FastifyRequest<{ Params: { id: string } }>, reply) => {
+    const { data: claim, error: fetchError } = await supabaseAdmin.from('claims').select('status, patient_id').eq('id', request.params.id).single();
+    if (fetchError || !claim) {
+      return reply.status(500).send({ success: false, error: fetchError?.message || 'Not found' });
+    }
+    
+    if (claim.status !== 'approved') {
+      return reply.status(400).send({ success: false, error: 'Only approved claims can be marked as paid' });
+    }
 
-      // Fetch current claim
-      const { data: existing, error: fetchError } = await supabaseAdmin
-        .from('claims')
-        .select('id, status, amount_approved, patient_id')
-        .eq('id', id)
-        .single();
+    const { data, error } = await supabaseAdmin.from('claims').update({ status: 'paid' }).eq('id', request.params.id).select().single();
+    if (error) return reply.status(500).send({ success: false, error: error.message });
 
-      if (fetchError || !existing) {
-        return reply.status(404).send({ error: 'Claim not found' });
-      }
+    await supabaseAdmin.from('notifications').insert({
+      profile_id: claim.patient_id,
+      title: 'Claim Paid',
+      body: 'The approved amount for your claim has been paid.'
+    });
 
-      if (existing.status !== 'approved') {
-        return reply.status(409).send({
-          error: `Only approved claims can be marked as paid. Current status: ${existing.status}`,
-        });
-      }
-
-      // Update to paid
-      const { data: updated, error: updateError } = await supabaseAdmin
-        .from('claims')
-        .update({
-          status: 'paid',
-          paid_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', id)
-        .select('id, status, amount_approved, paid_at')
-        .single();
-
-      if (updateError || !updated) {
-        request.log.error(updateError, 'claims mark-paid error');
-        return reply.status(500).send({ error: 'Failed to mark claim as paid' });
-      }
-
-      // Audit log
-      await supabaseAdmin.from('audit_logs').insert({
-        actor_id: request.user.profileId,
-        action: 'claim_paid',
-        resource_type: 'claims',
-        resource_id: id,
-        old_values: { status: 'approved' },
-        new_values: { status: 'paid' },
-        created_at: new Date().toISOString(),
-      });
-
-      // Notify patient
-      await supabaseAdmin.from('notifications').insert({
-        profile_id: existing.patient_id,
-        type: 'claim_paid',
-        title: 'Claim Payment Processed',
-        message: `Your approved claim (ID: ${id}) of amount ₹${(existing.amount_approved as number)?.toLocaleString()} has been marked as paid.`,
-        reference_type: 'claims',
-        reference_id: id,
-        is_read: false,
-        created_at: new Date().toISOString(),
-      });
-
-      return reply.send({
-        data: updated,
-        message: 'Claim marked as paid successfully',
-      });
-    },
-  );
+    return { success: true, data };
+  });
 }

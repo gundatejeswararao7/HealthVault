@@ -1,222 +1,171 @@
-import { FastifyPluginAsync } from 'fastify';
+import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { supabaseAdmin, createUserClient } from '../lib/supabase';
-import { requireAuth } from '../middleware/auth';
+import { supabaseAdmin } from '../lib/supabase';
+import { AuthenticatedUser } from '../../../../shared/types/index';
 
-const UpdateProfileSchema = z.object({
-  full_name: z.string().min(2).optional(),
-  phone: z.string().min(10).optional(),
-  address: z.string().min(5).optional(),
-  date_of_birth: z.string().optional(),
-  gender: z.enum(['male', 'female', 'other']).optional(),
+const profileUpdateSchema = z.object({
+  full_name: z.string().optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
 });
 
-const AddFamilyMemberSchema = z.object({
-  full_name: z.string().min(2),
-  relationship: z.string().min(2),
+const profileSetupSchema = z.object({
+  full_name: z.string(),
   date_of_birth: z.string(),
+  gender: z.string(),
+  phone: z.string(),
+  address: z.string(),
   email: z.string().email(),
 });
 
-const AddPolicySchema = z.object({
-  policy_number: z.string().min(3),
-  provider_name: z.string().min(2),
-  coverage_type: z.string().min(2),
-  coverage_limit: z.number().positive(),
-  deductible: z.number().nonnegative().default(0),
-  premium: z.number().positive(),
-  start_date: z.string(),
-  end_date: z.string(),
+const familyMemberSchema = z.object({
+  full_name: z.string(),
+  relationship: z.string(),
+  date_of_birth: z.string(),
 });
 
-export const profileRoutes: FastifyPluginAsync = async (fastify) => {
-  fastify.addHook('preHandler', requireAuth);
+export default async function profileRoutes(fastify: FastifyInstance): Promise<void> {
+  fastify.get('/profile', async (request, reply) => {
+    const user = request.user as AuthenticatedUser;
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', user.profileId)
+      .single();
 
-  // GET /profile - get profile & patient data
-  fastify.get('/', async (request) => {
-    const { profile, user } = request.user!;
+    if (profileError || !profile) {
+      return reply.status(404).send({ error: 'Profile not found' });
+    }
 
     const { data: patient } = await supabaseAdmin
       .from('patients')
       .select('*')
-      .eq('profile_id', profile.id)
+      .eq('profile_id', user.profileId)
       .single();
 
-    return {
-      data: {
-        profile,
-        patient: patient || null,
-        email: user.email,
-      },
-    };
+    return { data: { profile, patient: patient || null } };
   });
 
-  // PUT /profile - update patient details
-  fastify.put('/', async (request, reply) => {
-    const parse = UpdateProfileSchema.safeParse(request.body);
-    if (!parse.success) {
-      return reply.status(400).send({ error: parse.error.flatten() });
+  fastify.put('/profile', async (request, reply) => {
+    const user = request.user as AuthenticatedUser;
+    const parsed = profileUpdateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'Invalid input data' });
     }
 
-    const { profile, token } = request.user!;
-    const supabase = createUserClient(token);
-
-    // Upsert patient row
-    const { data: existingPatient } = await supabase
+    const { data: patient, error: patientFetchError } = await supabaseAdmin
       .from('patients')
       .select('id')
-      .eq('profile_id', profile.id)
+      .eq('profile_id', user.profileId)
       .single();
 
-    let result;
-    if (existingPatient) {
-      result = await supabase
-        .from('patients')
-        .update(parse.data)
-        .eq('profile_id', profile.id)
-        .select()
-        .single();
-    } else {
-      result = await supabase
-        .from('patients')
-        .insert({
-          profile_id: profile.id,
-          email: request.user!.user.email!,
-          ...parse.data,
-        })
-        .select()
-        .single();
+    if (patientFetchError || !patient) {
+       return reply.status(404).send({ error: 'Patient record not found' });
     }
 
-    if (result.error) {
-      return reply.status(500).send({ error: result.error.message });
-    }
-
-    return { data: result.data };
-  });
-
-  // GET /profile/family-members
-  fastify.get('/family-members', async (request, reply) => {
-    const { profile } = request.user!;
-
-    const { data: patient } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from('patients')
-      .select('id')
-      .eq('profile_id', profile.id)
+      .update(parsed.data)
+      .eq('id', patient.id)
+      .select()
       .single();
-
-    if (!patient) return { data: [] };
-
-    const { data: members, error } = await supabaseAdmin
-      .from('family_members')
-      .select('*')
-      .eq('primary_patient_id', patient.id)
-      .order('created_at', { ascending: false });
 
     if (error) {
-      return reply.status(500).send({ error: error.message });
+      return reply.status(500).send({ error: 'Failed to update profile' });
     }
-    return { data: members };
+
+    return { data, message: 'Profile updated successfully' };
   });
 
-  // POST /profile/family-members - submit family enrollment request
-  fastify.post('/family-members', async (request, reply) => {
-    const parse = AddFamilyMemberSchema.safeParse(request.body);
-    if (!parse.success) {
-      return reply.status(400).send({ error: parse.error.flatten() });
+  fastify.post('/profile/setup', async (request, reply) => {
+    const user = request.user as AuthenticatedUser;
+    const parsed = profileSetupSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'Invalid input data', details: parsed.error.issues });
     }
 
-    const { profile, token } = request.user!;
-    const { data: patient } = await supabaseAdmin
+    const { data: existingPatient } = await supabaseAdmin
       .from('patients')
-      .select('id')
-      .eq('profile_id', profile.id)
+      .select('*')
+      .eq('profile_id', user.profileId)
+      .maybeSingle();
+
+    if (existingPatient) {
+      return reply.status(400).send({ error: 'Patient record already exists' });
+    }
+
+    const { data: patient, error } = await supabaseAdmin
+      .from('patients')
+      .insert({
+        profile_id: user.profileId,
+        ...parsed.data
+      })
+      .select()
       .single();
 
-    if (!patient) {
-      return reply.status(400).send({ error: 'Primary patient record does not exist' });
+    if (error) {
+      return reply.status(500).send({ error: 'Failed to setup patient record' });
     }
 
-    const supabase = createUserClient(token);
-    const { data: familyMember, error } = await supabase
+    return { data: patient, message: 'Profile setup complete' };
+  });
+
+  fastify.get('/profile/family-members', async (request, reply) => {
+    const user = request.user as AuthenticatedUser;
+    
+    const { data: patient, error: patientError } = await supabaseAdmin
+      .from('patients')
+      .select('id')
+      .eq('profile_id', user.profileId)
+      .single();
+
+    if (patientError || !patient) {
+      return reply.status(404).send({ error: 'Patient not found' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('family_members')
+      .select('*')
+      .eq('primary_patient_id', patient.id);
+
+    if (error) {
+      return reply.status(500).send({ error: 'Failed to fetch family members' });
+    }
+
+    return { data };
+  });
+
+  fastify.post('/profile/family-members', async (request, reply) => {
+    const user = request.user as AuthenticatedUser;
+    const parsed = familyMemberSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'Invalid input data' });
+    }
+
+    const { data: patient, error: patientError } = await supabaseAdmin
+      .from('patients')
+      .select('id')
+      .eq('profile_id', user.profileId)
+      .single();
+
+    if (patientError || !patient) {
+      return reply.status(404).send({ error: 'Patient not found' });
+    }
+
+    const { data, error } = await supabaseAdmin
       .from('family_members')
       .insert({
         primary_patient_id: patient.id,
-        full_name: parse.data.full_name,
-        relationship: parse.data.relationship,
-        date_of_birth: parse.data.date_of_birth,
-        status: 'pending',
+        ...parsed.data,
+        status: 'pending'
       })
       .select()
       .single();
 
     if (error) {
-      return reply.status(500).send({ error: error.message });
+      return reply.status(500).send({ error: 'Failed to add family member' });
     }
 
-    return reply.status(201).send({
-      data: familyMember,
-      message: 'Family member enrollment request submitted for review',
-    });
+    return { data, message: 'Family member added' };
   });
-
-  // GET /profile/policies
-  fastify.get('/policies', async (request, reply) => {
-    const { profile, token } = request.user!;
-    const { data: patient } = await supabaseAdmin
-      .from('patients')
-      .select('id')
-      .eq('profile_id', profile.id)
-      .single();
-
-    if (!patient) return { data: [] };
-
-    const supabase = createUserClient(token);
-    const { data: policies, error } = await supabase
-      .from('insurance_policies')
-      .select('*')
-      .eq('patient_id', patient.id)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      return reply.status(500).send({ error: error.message });
-    }
-    return { data: policies };
-  });
-
-  // POST /profile/policies
-  fastify.post('/policies', async (request, reply) => {
-    const parse = AddPolicySchema.safeParse(request.body);
-    if (!parse.success) {
-      return reply.status(400).send({ error: parse.error.flatten() });
-    }
-
-    const { profile, token } = request.user!;
-    const { data: patient } = await supabaseAdmin
-      .from('patients')
-      .select('id')
-      .eq('profile_id', profile.id)
-      .single();
-
-    if (!patient) {
-      return reply.status(400).send({ error: 'Patient profile not set up' });
-    }
-
-    const supabase = createUserClient(token);
-    const { data: policy, error } = await supabase
-      .from('insurance_policies')
-      .insert({
-        patient_id: patient.id,
-        ...parse.data,
-        is_active: true,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      return reply.status(500).send({ error: error.message });
-    }
-
-    return reply.status(201).send({ data: policy });
-  });
-};
+}

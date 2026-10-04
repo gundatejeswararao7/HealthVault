@@ -27,7 +27,7 @@ export function requireRole(
     reply: FastifyReply,
   ): Promise<void> {
     // `request.user` is guaranteed by the `authenticate` preHandler.
-    const callerRole = request.user?.profile?.role as UserRole | undefined;
+    const callerRole = request.user?.role;
 
     if (!callerRole || !roles.includes(callerRole)) {
       return reply.status(403).send({

@@ -1,67 +1,56 @@
-import { FastifyPluginAsync } from 'fastify';
-import { createUserClient } from '../lib/supabase';
-import { requireAuth } from '../middleware/auth';
+import { FastifyInstance } from 'fastify';
+import { supabaseAdmin } from '../lib/supabase';
+import { AuthenticatedUser } from '../../../../shared/types/index';
 
-export const notificationRoutes: FastifyPluginAsync = async (fastify) => {
-  fastify.addHook('preHandler', requireAuth);
-
-  // GET /notifications - list user's notifications
-  fastify.get('/', async (request, reply) => {
-    const { profile, token } = request.user!;
-    const query = request.query as { unread_only?: string };
-
-    const supabase = createUserClient(token);
-    let q = supabase
+export default async function notificationsRoutes(fastify: FastifyInstance): Promise<void> {
+  fastify.get('/notifications', async (request, reply) => {
+    const user = request.user as AuthenticatedUser;
+    
+    const { data, error } = await supabaseAdmin
       .from('notifications')
       .select('*')
-      .eq('recipient_id', profile.id)
+      .eq('recipient_id', user.profileId)
       .order('created_at', { ascending: false });
 
-    if (query.unread_only === 'true') {
-      q = q.eq('read', false);
+    if (error) {
+      return reply.status(500).send({ error: 'Failed to fetch notifications' });
     }
 
-    const { data, error } = await q;
-    if (error) {
-      return reply.status(500).send({ error: error.message });
-    }
     return { data };
   });
 
-  // PATCH /notifications/:id/read - mark single as read
-  fastify.patch('/:id/read', async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const { profile, token } = request.user!;
+  fastify.patch<{ Params: { id: string } }>('/notifications/:id/read', async (request, reply) => {
+    const user = request.user as AuthenticatedUser;
+    const { id } = request.params;
 
-    const supabase = createUserClient(token);
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('notifications')
       .update({ read: true })
       .eq('id', id)
-      .eq('recipient_id', profile.id)
+      .eq('recipient_id', user.profileId)
       .select()
       .single();
 
     if (error) {
-      return reply.status(500).send({ error: error.message });
+      return reply.status(500).send({ error: 'Failed to update notification' });
     }
-    return { data };
+
+    return { data, message: 'Notification marked as read' };
   });
 
-  // PATCH /notifications/read-all - mark all notifications read
-  fastify.patch('/read-all', async (request, reply) => {
-    const { profile, token } = request.user!;
+  fastify.patch('/notifications/read-all', async (request, reply) => {
+    const user = request.user as AuthenticatedUser;
 
-    const supabase = createUserClient(token);
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('notifications')
       .update({ read: true })
-      .eq('recipient_id', profile.id)
+      .eq('recipient_id', user.profileId)
       .eq('read', false);
 
     if (error) {
-      return reply.status(500).send({ error: error.message });
+      return reply.status(500).send({ error: 'Failed to mark all as read' });
     }
+
     return { message: 'All notifications marked as read' };
   });
-};
+}

@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { supabaseAdmin } from '../lib/supabase';
-import type { AuthenticatedUser, Profile } from '../../../../shared/types/index';
+import type { AuthenticatedUser } from '../../../../shared/types/index';
 
 /**
  * Augment Fastify's request type so TypeScript knows about `request.user`
@@ -61,7 +61,7 @@ export async function authenticate(
   const { data: profile, error: profileError } = await supabaseAdmin
     .from('profiles')
     .select('*')
-    .eq('user_id', supabaseUser.id)
+    .eq('auth_uid', supabaseUser.id)
     .single();
 
   if (profileError || !profile) {
@@ -74,12 +74,11 @@ export async function authenticate(
 
   // Attach to request for downstream handlers.
   request.user = {
-    user: {
-      id: supabaseUser.id,
-      email: supabaseUser.email,
-      phone: supabaseUser.phone,
-    },
-    profile: profile as Profile,
+    id: supabaseUser.id,
+    email: supabaseUser.email || '',
+    role: profile.role,
+    profileId: profile.id,
+    hospitalId: profile.branch_id,
     token: jwt,
   };
 }
