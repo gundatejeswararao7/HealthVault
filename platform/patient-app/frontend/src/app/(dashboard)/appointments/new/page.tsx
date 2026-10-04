@@ -1,58 +1,62 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { apiClient } from '../../../../lib/api';
-import { Card } from '../../../../components/ui/Card';
-import { createClient } from '../../../../lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
+import { Card } from '@/components/ui/Card';
 
 export default function NewAppointmentPage() {
-  const router = useRouter();
-  const supabase = createClient();
-
   const [hospitals, setHospitals] = useState<any[]>([]);
   const [hospitalId, setHospitalId] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const router = useRouter();
+  const supabase = createClient();
 
   useEffect(() => {
-    async function loadHospitals() {
-      const { data } = await supabase
-        .from('hospitals')
-        .select('id, name, address')
-        .eq('status', 'active');
-      if (data && data.length > 0) {
-        setHospitals(data);
-        setHospitalId(data[0].id);
-      }
-    }
-    loadHospitals();
-  }, []);
+    const fetchHospitals = async () => {
+      const { data, error } = await supabase.from('hospitals').select('id,name').eq('status', 'active');
+      if (data) setHospitals(data);
+      if (error) console.error('Error fetching hospitals', error);
+    };
+    fetchHospitals();
+  }, [supabase]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-
+    setError('');
+    
     if (reason.length < 10) {
-      setError('Please provide a reason with at least 10 characters.');
+      setError('Reason must be at least 10 characters.');
       return;
     }
 
     setLoading(true);
     try {
-      await apiClient.post('/appointments', {
-        hospital_id: hospitalId,
-        scheduled_at: new Date(scheduledAt).toISOString(),
-        reason,
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/appointments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
+        body: JSON.stringify({
+          hospital_id: hospitalId,
+          scheduled_at: new Date(scheduledAt).toISOString(),
+          reason
+        })
       });
 
-      router.push('/appointments');
-      router.refresh();
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to book appointment');
+      }
+
+      router.push('/dashboard/appointments');
     } catch (err: any) {
-      setError(err.message || 'Failed to book appointment');
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -60,78 +64,52 @@ export default function NewAppointmentPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      <div>
-        <Link href="/appointments" className="text-xs text-blue-600 hover:underline">
-          ← Back to Appointments
-        </Link>
-        <h1 className="text-2xl font-bold text-slate-900 mt-2">Book an Appointment</h1>
-        <p className="text-sm text-slate-500">
-          Select an accredited healthcare facility and convenient schedule
-        </p>
-      </div>
-
-      <Card className="p-6">
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
-            {error}
-          </div>
-        )}
-
+      <h1 className="text-2xl font-bold">Book Appointment</h1>
+      
+      <Card>
+        {error && <div className="text-red-500 mb-4">{error}</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Healthcare Facility
-            </label>
+            <label className="block text-sm font-medium mb-1">Hospital</label>
             <select
+              required
+              className="w-full p-2 border rounded"
               value={hospitalId}
               onChange={(e) => setHospitalId(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-              required
             >
-              {hospitals.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.name} ({h.address})
-                </option>
+              <option value="">Select a hospital...</option>
+              {hospitals.map(h => (
+                <option key={h.id} value={h.id}>{h.name}</option>
               ))}
             </select>
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Date & Time
-            </label>
+            <label className="block text-sm font-medium mb-1">Date & Time</label>
             <input
               type="datetime-local"
               required
+              className="w-full p-2 border rounded"
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
             />
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Reason for Visit / Symptoms
-            </label>
+            <label className="block text-sm font-medium mb-1">Reason for Visit</label>
             <textarea
               required
-              rows={4}
-              placeholder="Describe your health concern or symptoms (min 10 characters)..."
+              className="w-full p-2 border rounded min-h-[100px]"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              placeholder="Please describe your symptoms or reason for visit (min 10 characters)"
             />
           </div>
-
-          <div className="pt-2">
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-lg transition text-sm disabled:opacity-50"
-            >
-              {loading ? 'Submitting Request...' : 'Confirm Appointment Booking'}
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+          >
+            {loading ? 'Booking...' : 'Book Appointment'}
+          </button>
         </form>
       </Card>
     </div>

@@ -3,22 +3,22 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
-export default function QueuePage() {
-  const [items, setItems] = useState<any[]>([]);
+export default function AppointmentsPage() {
+  const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/queue`)
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/appointments`)
       .then(res => res.json())
       .then(data => {
-        setItems(data.data || []);
+        setAppointments(data.data || []);
         setLoading(false);
       });
   }, []);
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Request Queue</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Appointments</h1>
       <div className="bg-white shadow rounded-lg overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -33,14 +33,14 @@ export default function QueuePage() {
           <tbody className="bg-white divide-y divide-gray-200">
             {loading ? (
               <tr><td colSpan={5} className="px-6 py-4 text-center">Loading...</td></tr>
-            ) : items.map((item) => (
-              <tr key={item.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm">{item.patient_id}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm">{new Date(item.scheduled_at).toLocaleString()}</td>
-                <td className="px-6 py-4 text-sm">{item.reason}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm">{item.status}</td>
+            ) : appointments.map((apt) => (
+              <tr key={apt.id}>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">{apt.patient_id}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">{new Date(apt.scheduled_at).toLocaleString()}</td>
+                <td className="px-6 py-4 text-sm">{apt.reason}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">{apt.status}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  <Link href={`/appointments/${item.id}`} className="text-blue-600 hover:text-blue-900">
+                  <Link href={`/appointments/${apt.id}`} className="text-blue-600 hover:text-blue-900">
                     View
                   </Link>
                 </td>

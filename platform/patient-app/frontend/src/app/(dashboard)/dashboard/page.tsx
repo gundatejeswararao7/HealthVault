@@ -1,172 +1,83 @@
-'use client';
+import { createClient } from '@/lib/supabase/server';
+import { Card } from '@/components/ui/Card';
+import { Table } from '@/components/ui/Table';
+import { Badge } from '@/components/ui/Badge';
 
-import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { apiClient } from '../../../lib/api';
-import { Card } from '../../../components/ui/Card';
-import { Badge } from '../../../components/ui/Badge';
+export default async function DashboardPage() {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
 
-export default function DashboardHome() {
-  const [stats, setStats] = useState({
-    upcomingAppointments: 0,
-    activeClaims: 0,
-    unreadNotifications: 0,
-  });
-  const [recentAppointments, setRecentAppointments] = useState<any[]>([]);
-  const [recentNotifications, setRecentNotifications] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const fetchOpts = {
+    headers: { 'Authorization': `Bearer ${session?.access_token}` },
+    next: { revalidate: 0 }
+  };
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const [apptsRes, notifsRes, claimsRes] = await Promise.allSettled([
-          apiClient.get<any[]>('/appointments'),
-          apiClient.get<any[]>('/notifications'),
-          apiClient.get<any[]>('/claims'),
-        ]);
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
 
-        const appts = apptsRes.status === 'fulfilled' ? apptsRes.value.data || [] : [];
-        const notifs = notifsRes.status === 'fulfilled' ? notifsRes.value.data || [] : [];
-        const claims = claimsRes.status === 'fulfilled' ? claimsRes.value.data || [] : [];
+  // Fetch data
+  const [appointmentsRes, notificationsRes, claimsRes] = await Promise.all([
+    fetch(`${API_URL}/api/v1/appointments?page=1&per_page=5`, fetchOpts),
+    fetch(`${API_URL}/api/v1/notifications?page=1&per_page=5`, fetchOpts),
+    fetch(`${API_URL}/api/v1/claims?page=1&per_page=5`, fetchOpts),
+  ]);
 
-        setRecentAppointments(appts.slice(0, 5));
-        setRecentNotifications(notifs.slice(0, 5));
-        setStats({
-          upcomingAppointments: appts.filter((a: any) => a.status === 'confirmed' || a.status === 'pending').length,
-          activeClaims: claims.filter((c: any) => c.status !== 'rejected' && c.status !== 'paid').length,
-          unreadNotifications: notifs.filter((n: any) => !n.read).length,
-        });
-      } catch (err) {
-        console.error('Failed to load dashboard data', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadData();
-  }, []);
-
-  if (loading) {
-    return <div className="text-slate-500 text-sm">Loading your health portal overview...</div>;
-  }
+  const appointments = await appointmentsRes.json().catch(() => ({ data: [] }));
+  const notifications = await notificationsRes.json().catch(() => ({ data: [] }));
+  const claims = await claimsRes.json().catch(() => ({ data: [] }));
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-        <p className="text-sm text-slate-500">Manage appointments, medical claims, and policies</p>
-      </div>
-
-      {/* Stats Cards */}
+      <h1 className="text-2xl font-bold text-gray-900">Welcome Back</h1>
+      
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase">Upcoming Appointments</p>
-              <h2 className="text-3xl font-extrabold text-blue-600 mt-2">{stats.upcomingAppointments}</h2>
-            </div>
-            <span className="text-3xl">📅</span>
+        <Card title="Upcoming Appointments">
+          <div className="text-3xl font-semibold">
+            {appointments.data?.filter((a: any) => a.status === 'confirmed').length || 0}
           </div>
-          <Link href="/appointments" className="text-xs text-blue-600 hover:underline mt-4 inline-block font-medium">
-            View all appointments →
-          </Link>
         </Card>
-
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase">Active Claims</p>
-              <h2 className="text-3xl font-extrabold text-indigo-600 mt-2">{stats.activeClaims}</h2>
-            </div>
-            <span className="text-3xl">📝</span>
+        <Card title="Pending Claims">
+          <div className="text-3xl font-semibold">
+            {claims.data?.filter((c: any) => c.status !== 'paid' && c.status !== 'rejected').length || 0}
           </div>
-          <Link href="/claims" className="text-xs text-indigo-600 hover:underline mt-4 inline-block font-medium">
-            View claims history →
-          </Link>
         </Card>
-
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase">Unread Notifications</p>
-              <h2 className="text-3xl font-extrabold text-amber-600 mt-2">{stats.unreadNotifications}</h2>
-            </div>
-            <span className="text-3xl">🔔</span>
+        <Card title="Unread Notifications">
+          <div className="text-3xl font-semibold">
+            {notifications.data?.filter((n: any) => !n.is_read).length || 0}
           </div>
-          <Link href="/notifications" className="text-xs text-amber-600 hover:underline mt-4 inline-block font-medium">
-            View notifications →
-          </Link>
         </Card>
       </div>
 
-      {/* Grid for Appointments & Notifications */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Appointments */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-slate-900">Recent Appointments</h2>
-            <Link
-              href="/appointments/new"
-              className="text-xs bg-blue-600 text-white font-medium px-3 py-1.5 rounded-lg hover:bg-blue-700 transition"
-            >
-              + Book New
-            </Link>
-          </div>
-
-          {recentAppointments.length === 0 ? (
-            <p className="text-sm text-slate-500 py-4">No appointments scheduled.</p>
+        <Card title="Recent Appointments">
+          {appointments.data && appointments.data.length > 0 ? (
+            <Table
+              headers={['Date', 'Hospital', 'Status']}
+              rows={appointments.data.slice(0, 5).map((app: any) => [
+                new Date(app.scheduled_at).toLocaleDateString(),
+                app.hospital_id,
+                <Badge key={app.id} status={app.status} />
+              ])}
+            />
           ) : (
-            <div className="space-y-3">
-              {recentAppointments.map((appt) => (
-                <div
-                  key={appt.id}
-                  className="p-3 rounded-lg border border-slate-200 flex items-center justify-between hover:bg-slate-50 transition"
-                >
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-800">{appt.reason}</h3>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {new Date(appt.scheduled_at).toLocaleDateString()} at{' '}
-                      {new Date(appt.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                  <Badge variant={appt.status === 'confirmed' ? 'success' : appt.status === 'pending' ? 'warning' : 'default'}>
-                    {appt.status}
-                  </Badge>
-                </div>
-              ))}
-            </div>
+            <p className="text-gray-500">No recent appointments.</p>
           )}
         </Card>
 
-        {/* Notifications */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-slate-900">Recent Notifications</h2>
-            <Link href="/notifications" className="text-xs text-blue-600 hover:underline">
-              View all
-            </Link>
-          </div>
-
-          {recentNotifications.length === 0 ? (
-            <p className="text-sm text-slate-500 py-4">No new notifications.</p>
-          ) : (
-            <div className="space-y-3">
-              {recentNotifications.map((notif) => (
-                <div
-                  key={notif.id}
-                  className={`p-3 rounded-lg border text-sm ${
-                    notif.read ? 'border-slate-200 bg-white' : 'border-blue-200 bg-blue-50/50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-900 text-xs">{notif.title}</span>
-                    <span className="text-[10px] text-slate-400">
-                      {new Date(notif.created_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-600 mt-1">{notif.body}</p>
-                </div>
+        <Card title="Recent Notifications">
+          {notifications.data && notifications.data.length > 0 ? (
+            <ul className="space-y-4">
+              {notifications.data.slice(0, 5).map((notif: any) => (
+                <li key={notif.id} className="border-b pb-2">
+                  <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                    {!notif.is_read && <span className="w-2 h-2 rounded-full bg-blue-600"></span>}
+                    {notif.title}
+                  </h4>
+                  <p className="text-sm text-gray-500">{notif.body}</p>
+                </li>
               ))}
-            </div>
+            </ul>
+          ) : (
+            <p className="text-gray-500">No recent notifications.</p>
           )}
         </Card>
       </div>

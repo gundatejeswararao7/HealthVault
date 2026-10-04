@@ -1,121 +1,130 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '../../../lib/supabase/client';
+import { createBrowserClient } from '@supabase/ssr';
 
-export default function ProviderLoginPage() {
-  const router = useRouter();
-  const supabase = createClient();
-
+export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [step, setStep] = useState<'email' | 'otp'>('email');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const router = useRouter();
+
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-
     setLoading(true);
-    const { error: otpError } = await supabase.auth.signInWithOtp({
+    setError('');
+
+    const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: false },
     });
-    setLoading(false);
 
-    if (otpError) {
-      setError(otpError.message);
-      return;
+    if (error) {
+      setError(error.message);
+    } else {
+      setStep('otp');
     }
-
-    setStep('otp');
+    setLoading(false);
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
     setLoading(true);
+    setError('');
 
-    const { error: verifyError } = await supabase.auth.verifyOtp({
+    const { error } = await supabase.auth.verifyOtp({
       email,
       token: otp,
       type: 'email',
     });
-    setLoading(false);
 
-    if (verifyError) {
-      setError(verifyError.message);
-      return;
+    if (error) {
+      setError(error.message);
+    } else {
+      router.push('/dashboard');
+      router.refresh();
     }
-
-    router.push('/queue');
-    router.refresh();
+    setLoading(false);
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-2xl p-8">
-        <div className="text-center mb-8">
-          <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-xl flex items-center justify-center mx-auto text-2xl mb-3">
-            🩺
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900">Provider & Admin Portal</h1>
-          <p className="text-xs text-slate-500 mt-1">Authorized Medical & Administrative Personnel Only</p>
+    <div className="flex min-h-screen items-center justify-center bg-gray-50">
+      <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-8 shadow-md">
+        <div className="text-center">
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900">
+            Provider & Admin Portal
+          </h2>
+          <p className="mt-2 text-sm text-gray-600">
+            Sign in to access your dashboard
+          </p>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg">
+          <div className="rounded-md bg-red-50 p-4 text-sm text-red-700">
             {error}
           </div>
         )}
 
         {step === 'email' ? (
-          <form onSubmit={handleSendOtp} className="space-y-4">
+          <form className="mt-8 space-y-6" onSubmit={handleSendOtp}>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Authorized Staff Email
+              <label htmlFor="email" className="sr-only">
+                Email address
               </label>
               <input
+                id="email"
+                name="email"
                 type="email"
                 required
-                placeholder="doctor@hospital.org"
+                className="relative block w-full rounded-md border-0 py-1.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 px-3"
+                placeholder="Email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500"
               />
             </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 px-4 rounded-lg transition text-sm disabled:opacity-50"
-            >
-              {loading ? 'Sending OTP...' : 'Send Access OTP'}
-            </button>
+            <div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="group relative flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50"
+              >
+                {loading ? 'Sending...' : 'Send Magic Link'}
+              </button>
+            </div>
           </form>
         ) : (
-          <form onSubmit={handleVerifyOtp} className="space-y-4">
+          <form className="mt-8 space-y-6" onSubmit={handleVerifyOtp}>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Enter 6-Digit Staff OTP
+              <label htmlFor="otp" className="sr-only">
+                One-Time Password
               </label>
               <input
+                id="otp"
+                name="otp"
                 type="text"
                 required
+                className="relative block w-full rounded-md border-0 py-1.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 px-3"
+                placeholder="Enter 6-digit OTP"
                 value={otp}
                 onChange={(e) => setOtp(e.target.value)}
-                placeholder="123456"
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-center text-lg tracking-widest"
               />
             </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 px-4 rounded-lg transition text-sm disabled:opacity-50"
-            >
-              {loading ? 'Authenticating...' : 'Verify & Enter Clinical Queue'}
-            </button>
+            <div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="group relative flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50"
+              >
+                {loading ? 'Verifying...' : 'Verify OTP'}
+              </button>
+            </div>
           </form>
         )}
       </div>

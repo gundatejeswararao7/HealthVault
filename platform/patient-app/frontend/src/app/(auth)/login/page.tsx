@@ -1,50 +1,44 @@
 'use client';
 
-import React, { useState } from 'react';
-import Link from 'next/link';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '../../../lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
+import Link from 'next/link';
 
 export default function LoginPage() {
+  const [step, setStep] = useState<'email' | 'otp'>('email');
+  const [email, setEmail] = useState('');
+  const [otp, setOtp] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const router = useRouter();
   const supabase = createClient();
 
-  const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState('');
-  const [step, setStep] = useState<'email' | 'otp'>('email');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-
-    // Defense: Validate email domain
-    if (!email.toLowerCase().endsWith('@gmail.com')) {
-      setError('Please use a valid @gmail.com email address per platform requirements.');
+    setError('');
+    if (!email.includes('@gmail.com')) {
+      setError('Only @gmail.com emails are supported');
       return;
     }
-
     setLoading(true);
-    const { error: otpError } = await supabase.auth.signInWithOtp({
+    const { error: signInError } = await supabase.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: false },
+      options: { shouldCreateUser: true },
     });
     setLoading(false);
 
-    if (otpError) {
-      setError(otpError.message);
-      return;
+    if (signInError) {
+      setError(signInError.message);
+    } else {
+      setStep('otp');
     }
-
-    setStep('otp');
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
+    setError('');
     setLoading(true);
-
     const { error: verifyError } = await supabase.auth.verifyOtp({
       email,
       token: otp,
@@ -54,96 +48,64 @@ export default function LoginPage() {
 
     if (verifyError) {
       setError(verifyError.message);
-      return;
+    } else {
+      router.push('/dashboard');
     }
-
-    router.push('/dashboard');
-    router.refresh();
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-xl shadow-lg border border-slate-200 p-8">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-slate-900">Patient Portal Login</h1>
-          <p className="text-sm text-slate-600 mt-2">
-            Secure passwordless login with OTP verification
-          </p>
-        </div>
-
-        {error && (
-          <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
-            {error}
-          </div>
-        )}
+    <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+        <h1 className="text-2xl font-bold mb-6 text-center">Patient Portal Login</h1>
+        
+        {error && <div className="text-red-500 mb-4 text-sm">{error}</div>}
 
         {step === 'email' ? (
           <form onSubmit={handleSendOtp} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Gmail Address
-              </label>
+              <label className="block text-sm font-medium mb-1">Email</label>
               <input
                 type="email"
-                required
-                placeholder="patient@gmail.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                required
+                className="w-full p-2 border rounded"
+                placeholder="patient@gmail.com"
               />
-              <p className="text-xs text-slate-500 mt-1">Must be an @gmail.com address</p>
             </div>
-
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition text-sm disabled:opacity-50"
+              className="w-full bg-blue-600 text-white p-2 rounded disabled:opacity-50"
             >
-              {loading ? 'Sending OTP...' : 'Send Login OTP'}
+              {loading ? 'Sending...' : 'Send OTP'}
             </button>
           </form>
         ) : (
           <form onSubmit={handleVerifyOtp} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Enter 6-digit OTP
-              </label>
+              <label className="block text-sm font-medium mb-1">OTP</label>
               <input
                 type="text"
-                required
-                placeholder="123456"
                 value={otp}
                 onChange={(e) => setOtp(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm tracking-widest text-center text-lg"
+                required
+                className="w-full p-2 border rounded"
+                placeholder="123456"
               />
-              <p className="text-xs text-slate-500 mt-1">Check your inbox at {email}</p>
             </div>
-
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition text-sm disabled:opacity-50"
+              className="w-full bg-blue-600 text-white p-2 rounded disabled:opacity-50"
             >
-              {loading ? 'Verifying...' : 'Verify & Continue'}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setStep('email')}
-              className="w-full text-slate-600 hover:text-slate-900 text-xs text-center block mt-2"
-            >
-              ← Use a different email
+              {loading ? 'Verifying...' : 'Verify'}
             </button>
           </form>
         )}
 
-        <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-          <p className="text-xs text-slate-600">
-            Don't have an account?{' '}
-            <Link href="/register" className="text-blue-600 hover:underline font-semibold">
-              Register here
-            </Link>
-          </p>
+        <div className="mt-4 text-center">
+          <Link href="/register" className="text-blue-600 text-sm">Don't have an account? Register</Link>
         </div>
       </div>
     </div>

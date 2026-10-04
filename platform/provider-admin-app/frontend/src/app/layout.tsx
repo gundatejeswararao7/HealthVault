@@ -1,21 +1,15 @@
-import React from 'react';
+import type { Metadata } from 'next';
 import './globals.css';
 
-export const metadata = {
-  title: 'Provider & Hospital Admin Portal',
-  description: 'Healthcare Provider Queue and Clinical Case Operations',
+export const metadata: Metadata = { 
+  title: 'Provider Portal | HealthVault', 
+  description: 'Provider and admin dashboard' 
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
-        {children}
-      </body>
+      <body className="min-h-screen bg-gray-50">{children}</body>
     </html>
   );
 }

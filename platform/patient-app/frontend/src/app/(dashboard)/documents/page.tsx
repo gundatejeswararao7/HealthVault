@@ -1,106 +1,82 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { apiClient } from '../../../lib/api';
-import { Card } from '../../../components/ui/Card';
-import { Badge } from '../../../components/ui/Badge';
+import { Card } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
+import { createClient } from '@/lib/supabase/client';
 
 export default function DocumentsPage() {
-  const [documents, setDocuments] = useState<any[]>([]);
-  const [typeFilter, setTypeFilter] = useState('all');
+  const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const supabase = createClient();
 
   useEffect(() => {
-    async function loadDocs() {
+    const fetchDocs = async () => {
       try {
-        const query = typeFilter !== 'all' ? `?document_type=${typeFilter}` : '';
-        const res = await apiClient.get<any[]>(`/documents${query}`);
-        setDocuments(res.data || []);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/documents`, {
+          headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+        const json = await res.json();
+        if (res.ok) setData(json.data || []);
       } catch (err) {
         console.error(err);
       } finally {
         setLoading(false);
       }
-    }
-    loadDocs();
-  }, [typeFilter]);
+    };
+    fetchDocs();
+  }, [supabase]);
 
-  const handleDownload = async (docId: string) => {
+  const handleDownload = async (id: string) => {
     try {
-      const res = await apiClient.get<{ downloadUrl: string }>(`/documents/${docId}/download-url`);
-      if (res.downloadUrl) {
-        window.open(res.downloadUrl, '_blank');
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/documents/${id}/download-url`, {
+        headers: { 'Authorization': `Bearer ${session?.access_token}` }
+      });
+      const json = await res.json();
+      if (res.ok && json.data?.url) {
+        window.open(json.data.url, '_blank');
       }
-    } catch (err: any) {
-      alert(err.message || 'Failed to download document');
+    } catch (e) {
+      console.error(e);
     }
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Documents Vault</h1>
-          <p className="text-sm text-slate-500">Secure Supabase Storage for lab reports, bills, and ID proofs</p>
-        </div>
-        <Link
-          href="/documents/upload"
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
-        >
-          + Upload Document
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold">Documents</h1>
+        <Link href="/dashboard/documents/upload" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+          Upload Document
         </Link>
       </div>
 
-      {/* Filter */}
-      <div className="flex gap-2 border-b border-slate-200 pb-2">
-        {['all', 'lab_report', 'invoice', 'id_proof', 'case_document'].map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setTypeFilter(tab)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition ${
-              typeFilter === tab ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            {tab.replace('_', ' ')}
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <p className="text-sm text-slate-500">Loading documents...</p>
-      ) : documents.length === 0 ? (
-        <Card className="p-8 text-center">
-          <p className="text-slate-500 text-sm">No documents uploaded yet.</p>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {documents.map((doc) => (
-            <Card key={doc.id} className="p-4 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-2xl">📄</span>
-                  <Badge variant="info">{doc.document_type}</Badge>
+      {loading ? <div>Loading...</div> : (
+        <div className="grid gap-4">
+          {data.length === 0 ? <div className="text-gray-500">No documents found.</div> : (
+            data.map(doc => (
+              <Card key={doc.id}>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-medium">{doc.file_name}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge status={doc.document_type} />
+                      <span className="text-sm text-gray-500">{new Date(doc.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleDownload(doc.id)}
+                    className="border border-blue-600 text-blue-600 px-4 py-2 rounded hover:bg-blue-50"
+                  >
+                    Download
+                  </button>
                 </div>
-                <h3 className="font-semibold text-slate-900 text-sm mt-3 truncate" title={doc.file_name}>
-                  {doc.file_name}
-                </h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Size: {(doc.size_bytes / 1024).toFixed(1)} KB •{' '}
-                  {new Date(doc.uploaded_at).toLocaleDateString()}
-                </p>
-              </div>
-
-              <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
-                <button
-                  onClick={() => handleDownload(doc.id)}
-                  className="text-xs font-semibold text-blue-600 hover:underline"
-                >
-                  Download / View →
-                </button>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            ))
+          )}
         </div>
       )}
     </div>

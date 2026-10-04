@@ -1,86 +1,60 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { apiClient } from '../../../lib/api';
-import { Card } from '../../../components/ui/Card';
-import { Badge } from '../../../components/ui/Badge';
+import { Card } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
+import { createClient } from '@/lib/supabase/client';
 
 export default function FamilyPage() {
-  const [members, setMembers] = useState<any[]>([]);
+  const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const supabase = createClient();
 
   useEffect(() => {
-    async function load() {
+    const fetchFamily = async () => {
       try {
-        const res = await apiClient.get<any[]>('/profile/family-members');
-        setMembers(res.data || []);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/profile/family-members`, {
+          headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+        const json = await res.json();
+        if (res.ok) setData(json.data || []);
       } catch (err) {
         console.error(err);
       } finally {
         setLoading(false);
       }
-    }
-    load();
-  }, []);
+    };
+    fetchFamily();
+  }, [supabase]);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Family Members</h1>
-          <p className="text-sm text-slate-500">Manage dependent family profiles linked to your healthcare account</p>
-        </div>
-        <Link
-          href="/family/add"
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
-        >
-          + Add Family Member
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold">Family Members</h1>
+        <Link href="/dashboard/family/add" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+          Add Family Member
         </Link>
       </div>
 
-      {loading ? (
-        <p className="text-sm text-slate-500">Loading family members...</p>
-      ) : members.length === 0 ? (
-        <Card className="p-8 text-center">
-          <p className="text-slate-500 text-sm">No family members registered.</p>
-          <Link href="/family/add" className="text-blue-600 text-xs font-semibold hover:underline mt-2 inline-block">
-            Link a dependent family member
-          </Link>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {members.map((member) => (
-            <Card key={member.id} className="p-5">
-              <div className="flex items-center justify-between">
-                <span className="text-2xl">👨‍👩‍👦</span>
-                <Badge
-                  variant={
-                    member.status === 'approved'
-                      ? 'success'
-                      : member.status === 'rejected'
-                      ? 'danger'
-                      : 'warning'
-                  }
-                >
-                  {member.status}
-                </Badge>
-              </div>
-
-              <h3 className="font-bold text-slate-900 text-base mt-3">{member.full_name}</h3>
-              <div className="text-xs text-slate-600 mt-2 space-y-1">
-                <p>Relationship: <strong className="capitalize">{member.relationship}</strong></p>
-                <p>Date of Birth: {new Date(member.date_of_birth).toLocaleDateString()}</p>
-                <p>Submitted: {new Date(member.created_at).toLocaleDateString()}</p>
-              </div>
-
-              {member.decision_reason && (
-                <div className="mt-3 p-2 bg-amber-50 rounded text-xs text-amber-800">
-                  Notes: {member.decision_reason}
+      {loading ? <div>Loading...</div> : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {data.length === 0 ? <div className="text-gray-500">No family members found.</div> : (
+            data.map(member => (
+              <Card key={member.id}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="text-lg font-medium">{member.full_name}</h3>
+                    <p className="text-gray-600">{member.relationship}</p>
+                    {member.email && <p className="text-sm text-gray-500">{member.email}</p>}
+                  </div>
+                  <Badge status={member.status || 'active'} />
                 </div>
-              )}
-            </Card>
-          ))}
+              </Card>
+            ))
+          )}
         </div>
       )}
     </div>

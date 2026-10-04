@@ -1,87 +1,68 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { apiClient } from '../../../lib/api';
-import { Card } from '../../../components/ui/Card';
-import { Badge } from '../../../components/ui/Badge';
+import { Card } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
+import { createClient } from '@/lib/supabase/client';
 
 export default function PoliciesPage() {
-  const [policies, setPolicies] = useState<any[]>([]);
+  const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const supabase = createClient();
 
   useEffect(() => {
-    async function load() {
+    const fetchPolicies = async () => {
       try {
-        const res = await apiClient.get<any[]>('/profile/policies');
-        setPolicies(res.data || []);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/profile/policies`, {
+          headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+        const json = await res.json();
+        if (res.ok) setData(json.data || []);
       } catch (err) {
         console.error(err);
       } finally {
         setLoading(false);
       }
-    }
-    load();
-  }, []);
+    };
+    fetchPolicies();
+  }, [supabase]);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Insurance Policies</h1>
-          <p className="text-sm text-slate-500">Your registered health coverage policies</p>
-        </div>
-        <Link
-          href="/policies/add"
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
-        >
-          + Add Policy
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold">Insurance Policies</h1>
+        <Link href="/dashboard/policies/add" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+          Add Policy
         </Link>
       </div>
 
-      {loading ? (
-        <p className="text-sm text-slate-500">Loading policies...</p>
-      ) : policies.length === 0 ? (
-        <Card className="p-8 text-center">
-          <p className="text-slate-500 text-sm">No insurance policies registered.</p>
-          <Link href="/policies/add" className="text-blue-600 text-xs font-semibold hover:underline mt-2 inline-block">
-            Register your health insurance policy
-          </Link>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {policies.map((p) => (
-            <Card key={p.id} className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-bold text-slate-900 text-lg">{p.provider_name}</h3>
-                  <p className="text-xs text-slate-500 font-mono mt-0.5">Policy #{p.policy_number}</p>
+      {loading ? <div>Loading...</div> : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {data.length === 0 ? <div className="text-gray-500">No policies found.</div> : (
+            data.map(policy => (
+              <Card key={policy.id}>
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="text-lg font-medium">{policy.provider_name}</h3>
+                    <p className="text-gray-600 font-mono">{policy.policy_number}</p>
+                  </div>
+                  <Badge status={policy.is_active ? 'active' : 'inactive'} />
                 </div>
-                <Badge variant={p.is_active ? 'success' : 'default'}>
-                  {p.is_active ? 'Active' : 'Expired'}
-                </Badge>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-slate-100 text-xs">
-                <div>
-                  <span className="text-slate-500">Coverage Type:</span>
-                  <p className="font-semibold text-slate-800">{p.coverage_type}</p>
+                <div className="space-y-2 text-sm text-gray-700">
+                  <div className="flex justify-between"><span>Type:</span> <span className="font-medium capitalize">{policy.coverage_type}</span></div>
+                  <div className="flex justify-between"><span>Coverage Limit:</span> <span className="font-medium">${policy.coverage_limit}</span></div>
+                  <div className="flex justify-between"><span>Deductible:</span> <span className="font-medium">${policy.deductible}</span></div>
+                  <div className="flex justify-between"><span>Premium:</span> <span className="font-medium">${policy.premium}</span></div>
+                  <div className="flex justify-between pt-2 border-t text-xs text-gray-500">
+                    <span>Valid: {new Date(policy.start_date).toLocaleDateString()} - {new Date(policy.end_date).toLocaleDateString()}</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-slate-500">Max Limit:</span>
-                  <p className="font-bold text-green-600 text-sm">${Number(p.coverage_limit).toLocaleString()}</p>
-                </div>
-                <div>
-                  <span className="text-slate-500">Deductible:</span>
-                  <p className="font-semibold text-slate-800">${Number(p.deductible).toLocaleString()}</p>
-                </div>
-                <div>
-                  <span className="text-slate-500">Valid Through:</span>
-                  <p className="font-semibold text-slate-800">{new Date(p.end_date).toLocaleDateString()}</p>
-                </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            ))
+          )}
         </div>
       )}
     </div>
